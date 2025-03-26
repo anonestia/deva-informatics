@@ -170,7 +170,7 @@ class OnMessageEvent(commands.Cog):
                 try:
                     with open(json_path, 'r') as file:
                         instructions = json.load(file)
-                    instruction = instructions.get('initiation_trigger', 'Not rovided')
+                    instruction = instructions.get('initiative_trigger', 'Not rovided')
                 except FileNotFoundError:
                     print("Error: instructions.json file not found.")
                     return "Error: Could not generate response because the JSON file is missing."
