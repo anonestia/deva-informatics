@@ -66,7 +66,7 @@ class OnMessageEvent(commands.Cog):
         has_manage_messages = ctx.author.guild_permissions.manage_messages if ctx.guild else False
 
         if not (is_bot_owner or is_admin or has_manage_messages or isinstance(ctx.channel, discord.DMChannel)):
-            await ctx.send("Ah, siapa?", delete_after=5)
+            await ctx.send("Maaf, gagal menghapus karena tidak memiliki izin.")
             return
 
         history_path = self.get_history_path(
@@ -74,7 +74,7 @@ class OnMessageEvent(commands.Cog):
         )
         
         clear_history_file(history_path)
-        await ctx.send("Chat history di channel ini dihapus.")
+        await ctx.send("Memori berhasil dihapus. Memulai percakapan dari awal.")
 
 
     @commands.Cog.listener()
@@ -82,7 +82,7 @@ class OnMessageEvent(commands.Cog):
         if message.author == self.bot.user:
             return  # Ignore bot's own messages
         
-        if message.content in ["=reset", "=restart"]:
+        if message.content in ["+reset", "+restart"]:
             return
 
         # Get history file path
@@ -101,6 +101,8 @@ class OnMessageEvent(commands.Cog):
             system_message= None
         )
         save_history(history_path, history)
+        
+        gotRespond = 0
 
         # Respond only when mentioned, in private chat, or randomly (1% chance)
         if isinstance(message.channel, discord.DMChannel) or self.bot.user in message.mentions:
@@ -127,8 +129,8 @@ class OnMessageEvent(commands.Cog):
                 # cek kalau butuh knowledge atau tidak
                 knowledge_prompt = (
                     f"Perhatikan percakapan ini!\n{chat_history}\n"
-                    "Kamu membalas sebagai Luma. Apakah percakapan di atas membutuhkan konteks lebih? Atau membahas berkaitan dengan Toram Online? Beberapanya yaitu membahas guild (umum maupun Noctis Lexicon), job, build, tips, leveling, farming, skill, item, consumable, gem, raid, event, dan lain-lainnya."
-                    "Pembahasan sering kali tanpa menyebutkan 'skill', 'item' atau yang lainnya, melainkan langsung menyebutkan nama skill, item, consumables, dan lainnya. Apabila ditemukan kata-kata berupa nama aneh atau unik, maka itu membutuhkan konteks."
+                    "Kamu membalas sebagai Deva. Apakah ada pertanyaan berkaitan dengan jadwal, dosen, dan hal lain yang berkaitan dengan informasi kampus?"
+                    "Pembahasan bisa jadi disebutkan secara tersirat. Apabila ditemukan kata-kata berkaitan pada hal spesifik dan unik kampus yang bukanlah informasi yang biasa diakses publik serta dibutuhkan info terkini, maka itu membutuhkan konteks tambahan."
                     "Jawab hanya Y untuk ya, atau hanya N untuk tidak."
                 )
                 
@@ -156,20 +158,7 @@ class OnMessageEvent(commands.Cog):
                     f"This is the chat history:\n{chat_history}"
                     f"User's latest message:\n{message.author.display_name}: {message.content}"
                 )
-                
-                deep_context = deepContext_generate(deepContext_prompt).strip()
-                response = generate_ai_response(prompt, deep_context)
-
-                # Update history with bot's response
-                history = add_to_history(
-                    history,
-                    user_id=self.bot.user.id,
-                    user_display=self.bot.user.name,
-                    user_message= None,
-                    ai_response=response,
-                    system_message= None
-                )
-                save_history(history_path, history)
+            gotRespond = 1                
             
         elif random.randint(1, 100) <= 5:  # 5% chance
             async with message.channel.typing():
@@ -213,8 +202,24 @@ class OnMessageEvent(commands.Cog):
                     system_message= None
                 )
                 save_history(history_path, history)
+            gotRespond = 1
         else:
             return
+        
+        if gotRespond:
+            deep_context = deepContext_generate(deepContext_prompt).strip()
+            response = generate_ai_response(prompt, deep_context)
+
+            # Update history with bot's response
+            history = add_to_history(
+                history,
+                user_id=self.bot.user.id,
+                user_display=self.bot.user.name,
+                user_message= None,
+                ai_response=response,
+                system_message= None
+            )
+            save_history(history_path, history)
 
         # Use the chunking function to send the response
         await self.send_message(message.channel, response)

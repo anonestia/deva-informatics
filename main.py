@@ -21,24 +21,6 @@ async def setup_hook():
                 print(f"Failed to load Cog: {filename[:-3]} - {e}")
         else:
             print(f"Skipped loading ({filename})")
-    # for filename in os.listdir('./info'):
-    #     if filename.endswith('.py'):
-    #         try:
-    #             await bot.load_extension(f'info.{filename[:-3]}')
-    #             print(f"Loaded information: {filename[:-3]}")
-    #         except Exception as e:
-    #             print(f"Failed to load information: {filename[:-3]} - {e}")
-    #     else:
-    #         print(f"Skipped loading ({filename})")
-    # for filename in os.listdir('./knowledge'):
-    #     if filename.endswith('.py'):
-    #         try:
-    #             await bot.load_extension(f'info.{filename[:-3]}')
-    #             print(f"Loaded information: {filename[:-3]}")
-    #         except Exception as e:
-    #             print(f"Failed to load information: {filename[:-3]} - {e}")
-    #     else:
-    #         print(f"Skipped loading ({filename})")
 
 @bot.event
 async def on_ready():
