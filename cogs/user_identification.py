@@ -17,6 +17,77 @@ def contains_forbidden_words(self, text):
         if fuzz.partial_ratio(keyword, text) > 85:  # 85% similarity threshold
             return True
     return False
+
+def fetch_users(user_list, others):
+    """Fetch user data safely and return a formatted list"""
+    if not user_list:  # If list is empty, return empty result
+        return []
+    if others:
+        toFetch = "COALESCE(posisi, 'Unknown'), COALESCE(semester, 'Unknown')"
+    else:
+        toFetch = "COALESCE(posisi, 'Unknown'), COALESCE(semester, 'Unknown'), COALESCE(kelas, ' '), COALESCE(tentang, 'Unknown'), COALESCE(minat, 'Unknown')"
+        
+    conn = sqlite3.connect("data/user_info.db")
+    cursor = conn.cursor()
+
+    placeholders = ", ".join("?" * len(user_list))
+    query = f"SELECT COALESCE(nama, 'As stated in chat history'), {toFetch} FROM user WHERE DiscordID IN ({placeholders})"
+    
+    cursor.execute(query, user_list)
+    result = cursor.fetchall()
+    conn.close()
+    return result
+
+def get_userInfo(trigUser, nontrigUser=None):
+    users_in_convo = []
+
+    # Fetch trigUser first
+    trigUserData = fetch_users(trigUser, 0)
+    
+    # Fetch nontrigUser (list of users)
+    otherUserData = []
+    if nontrigUser:
+        for user in nontrigUser:
+            otherUserData.extend(fetch_users(user, 1))  # Extend list with multiple users
+
+    # Process each user
+    for i, user in enumerate(trigUserData + otherUserData):
+        nama, posisi, semester, kelas, tentang, minat = user
+        
+        # Determine if it's a trigUser or a nonTrigUser
+        is_trig_user = i < len(trigUserData)  # First part of list = trigUser
+
+        # Assign correct Discord ID
+        discord_id = trigUser if is_trig_user else nontrigUser[i - len(trigUserData)]  # Adjust index for nontrigUser list
+
+        if is_trig_user:
+            # Full details for trigUser
+            user_info = f"Information for user {discord_id}\n"
+            user_info += f"Nickname: {nama}\n"
+            if posisi != "Unknown":
+                user_info += f"{posisi}, "
+            if semester != "Unknown":
+                user_info += f"Semester: {semester} "
+            if kelas != "Unknown":
+                user_info += f"{kelas}\n"
+            if tentang != "Unknown":
+                user_info += f"\nAbout: {tentang}"
+            if minat != "Unknown":
+                user_info += f"\nBidang Minat: {minat}"
+        else:
+            # Limited details for nontrigUser (only nickname, position, semester)
+            user_info = f"Information for user {discord_id}\n"
+            user_info += f"Nickname: {nama}\n"
+            if posisi != "Unknown":
+                user_info += f"{posisi}, "
+            if semester != "Unknown":
+                user_info += f"Semester: {semester}"
+
+        users_in_convo.append(user_info)
+
+    # Return formatted user data
+    return "Users in conversation:\n" + ("\n\n".join(users_in_convo) if users_in_convo else "No users' data found.")
+
     
 class ProfileModal(discord.ui.Modal, title="Beritahu Tentangmu"):
     def __init__(self, nama=None, posisi=None, semester=None, kelas=None, tentang=None, minat=None):
@@ -26,7 +97,7 @@ class ProfileModal(discord.ui.Modal, title="Beritahu Tentangmu"):
             label="Nama Panggilan",
             placeholder="Deva",
             style=discord.TextStyle.short,
-            required=False,
+            required=True,
             default=nama
         )
         self.posisi = TextInput(
@@ -102,7 +173,7 @@ class ProfileModal(discord.ui.Modal, title="Beritahu Tentangmu"):
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS user (
                 DiscordID TEXT PRIMARY KEY,
-                nama TEXT DEFAULT NULL,
+                nama TEXT NOT NULL,
                 posisi TEXT DEFAULT NULL,
                 semester TEXT DEFAULT NULL,
                 kelas TEXT DEFAULT NULL,
