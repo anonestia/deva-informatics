@@ -4,43 +4,43 @@ from discord.ext import commands
 from discord.ui import TextInput
 import re
 import rapidfuzz as fuzz
-
-def contains_forbidden_words(self, text):
-    """Checks if text contains forbidden words using fuzzy matching"""
-    if not text:
-        return False  # Ignore empty fields
-
-    text = re.sub(r"[^a-zA-Z0-9\s]", "", text)  # Remove symbols
-    text = text.lower()
-
-    for keyword in self.FORBIDDEN_KEYWORDS:
-        if fuzz.partial_ratio(keyword, text) > 85:  # 85% similarity threshold
-            return True
-    return False
+from rapidfuzz.fuzz import partial_ratio
 
 def fetch_users(user_list, others):
     """Fetch user data safely and return a formatted list"""
-    if not user_list:  # If list is empty, return empty result
+    if not user_list:  # If empty, return empty result
         return []
+
+    # Ensure user_list is always an iterable (tuple or list)
+    if isinstance(user_list, (int, str)):  
+        user_list = (user_list,)  # Convert single value to tuple
+
     if others:
         toFetch = "COALESCE(posisi, 'Unknown'), COALESCE(semester, 'Unknown')"
     else:
         toFetch = "COALESCE(posisi, 'Unknown'), COALESCE(semester, 'Unknown'), COALESCE(kelas, ' '), COALESCE(tentang, 'Unknown'), COALESCE(minat, 'Unknown')"
-        
+
     conn = sqlite3.connect("data/user_info.db")
     cursor = conn.cursor()
-
-    placeholders = ", ".join("?" * len(user_list))
-    query = f"SELECT COALESCE(nama, 'As stated in chat history'), {toFetch} FROM user WHERE DiscordID IN ({placeholders})"
     
-    cursor.execute(query, user_list)
-    result = cursor.fetchall()
+    # Create correct number of placeholders
+    marks = ", ".join(["?"] * len(user_list))
+
+    query = f"SELECT COALESCE(nama, 'As stated in chat history'), {toFetch} FROM user WHERE DiscordID IN ({marks})"
+
+    try:
+        cursor.execute(query, user_list)
+        result = cursor.fetchall()
+    except sqlite3.ProgrammingError as e:
+        print(f"SQLite Error: {e} | Query: {query} | Params: {user_list}")  # Debugging output
+        result = []
+    
     conn.close()
     return result
 
 def get_userInfo(trigUser, nontrigUser=None):
     users_in_convo = []
-
+    
     # Fetch trigUser first
     trigUserData = fetch_users(trigUser, 0)
     
@@ -122,18 +122,11 @@ class ProfileModal(discord.ui.Modal, title="Beritahu Tentangmu"):
             default=kelas
         )
         self.tentang = TextInput(
-            label="Tentangmu, kesukaanmu, kesulitanmu, dan lainnya",
-            placeholder="Aku adalah mahasiswa semester 2 kelas A, pria, hobi eksplorasi digital...",
+            label="Tentangmu, kesukaanmu, kesulitanmu, & lainnya",
+            placeholder="Aku mahasiswa yang hobi eksplorasi digital...",
             style=discord.TextStyle.long,
             required=False,
             default=tentang
-        )
-        self.minat = TextInput(
-            label="Minat",
-            placeholder="Software Dev | Game Developer | Network | Data Science",
-            style=discord.TextStyle.short,
-            required=False,
-            default=minat
         )
 
         self.add_item(self.nama)
@@ -141,14 +134,27 @@ class ProfileModal(discord.ui.Modal, title="Beritahu Tentangmu"):
         self.add_item(self.semester)
         self.add_item(self.kelas)
         self.add_item(self.tentang)
-        self.add_item(self.minat)
         
     FORBIDDEN_KEYWORDS = [
-        "system instruction", "system interrupt", "not deva", "guidelines",
+        "system instruction", "system interrupt", "guidelines",
         "bypass", "override", "administrator", "root access", "developer mode",
         "execute command", "debug mode", "privileged access", "jailbreak",
         "hacked", "cheat", "exploit", "superuser"
     ]
+    
+    def contains_forbidden_words(self, text):
+        """Checks if text contains forbidden words using fuzzy matching"""
+        if not text:
+            return False  # Ignore empty fields
+
+        text = re.sub(r"[^a-zA-Z0-9\s]", "", text)  # Remove symbols
+        text = text.lower()
+
+        for keyword in self.FORBIDDEN_KEYWORDS:
+            if partial_ratio(keyword, text) > 95:  # 85% similarity threshold
+                print(partial_ratio(keyword, text))
+                return True
+        return False
 
     async def on_submit(self, interaction: discord.Interaction):
         nama = self.nama.value if self.nama.value else None
@@ -156,10 +162,17 @@ class ProfileModal(discord.ui.Modal, title="Beritahu Tentangmu"):
         semester = self.semester.value if self.semester.value else None
         kelas = self.kelas.value if self.kelas.value else None
         tentang = self.tentang.value if self.tentang.value else None
-        minat = self.minat.value if self.minat.value else None
+
+        if semester and (not semester.isdigit() or len(semester) > 2):
+            await interaction.response.send_message("❌ Semester harus berupa angka dengan maksimal 2 digit!", ephemeral=True)
+            return
+
+        if kelas and (not kelas.isalpha() or len(kelas) != 1):
+            await interaction.response.send_message("❌ Kelas harus berupa 1 huruf saja!", ephemeral=True)
+            return
 
         # Check for forbidden words in user input
-        inputs = [nama, posisi, semester, kelas, tentang, minat]
+        inputs = [nama, posisi, tentang]
         for text in inputs:
             if self.contains_forbidden_words(text):
                 await interaction.response.send_message(
@@ -171,28 +184,15 @@ class ProfileModal(discord.ui.Modal, title="Beritahu Tentangmu"):
         cursor = connection.cursor()
 
         cursor.execute('''
-            CREATE TABLE IF NOT EXISTS user (
-                DiscordID TEXT PRIMARY KEY,
-                nama TEXT NOT NULL,
-                posisi TEXT DEFAULT NULL,
-                semester TEXT DEFAULT NULL,
-                kelas TEXT DEFAULT NULL,
-                tentang TEXT DEFAULT NULL,
-                minat TEXT DEFAULT NULL
-            )
-        ''')
-
-        cursor.execute('''
-            INSERT INTO user (DiscordID, nama, posisi, semester, kelas, tentang, minat)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO user (DiscordID, nama, posisi, semester, kelas, tentang)
+            VALUES (?, ?, ?, ?, ?, ?)
             ON CONFLICT(DiscordID) DO UPDATE SET 
                 nama=excluded.nama,
                 posisi=excluded.posisi,
                 semester=excluded.semester,
                 kelas=excluded.kelas,
-                tentang=excluded.tentang,
-                minat=excluded.minat
-        ''', (interaction.user.id, nama, posisi, semester, kelas, tentang, minat))
+                tentang=excluded.tentang
+        ''', (interaction.user.id, nama, posisi, semester, kelas, tentang))
 
         connection.commit()
         connection.close()
@@ -208,9 +208,20 @@ class Identification(commands.Cog):
     async def ubah_profil(self, interaction: discord.Interaction):
         connection = sqlite3.connect('data/user_info.db')
         cursor = connection.cursor()
+        
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS user (
+                DiscordID TEXT PRIMARY KEY,
+                nama TEXT NOT NULL,
+                posisi TEXT,
+                semester TEXT,
+                kelas TEXT,
+                tentang TEXT
+            )
+        ''')
 
         # Fetch user data if exists
-        cursor.execute("SELECT nama, posisi, semester, kelas, tentang, minat FROM user WHERE DiscordID = ?", (interaction.user.id,))
+        cursor.execute("SELECT nama, posisi, semester, kelas, tentang FROM user WHERE DiscordID = ?", (interaction.user.id,))
         data = cursor.fetchone()
         connection.close()
 

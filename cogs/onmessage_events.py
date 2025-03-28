@@ -6,34 +6,34 @@ from discord.ext import commands
 import random, os, json, re
 from collections import defaultdict
 
-def get_instruction(type):
-    # Path to the JSON file (adjusted for the 'cogs' folder structure)
-    json_path = os.path.join(os.path.dirname(__file__), '..', 'prompts', 'to_reply.json')
-
-    # Read and extract data from the JSON file
-    try:
-        with open(json_path, 'r') as file:
-            instructions = json.load(file)
-        return instructions.get(type, 'Not provided')
-    except FileNotFoundError:
-        print("Error: instructions.json file not found.")
-        return "Error: Could not generate response because the JSON file is missing."
-    except json.JSONDecodeError:
-        print("Error: Failed to decode JSON.")
-        return "Error: Could not generate response due to invalid JSON format."
-    
-def get_history_path(channel_or_user):
-    if isinstance(channel_or_user, discord.TextChannel):  # Server channel
-        return f"chat_histories/{channel_or_user.id}.json"
-    elif isinstance(channel_or_user, discord.User):  # Private chat
-        return f"chat_histories/{channel_or_user.id}.json"
-
-def is_private_chat(message):
-    return isinstance(message.channel, discord.DMChannel)
-
 class OnMessageEvent(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
+        
+    def get_instruction(self, type):
+        # Path to the JSON file (adjusted for the 'cogs' folder structure)
+        json_path = os.path.join(os.path.dirname(__file__), '..', 'prompts', 'to_reply.json')
+
+        # Read and extract data from the JSON file
+        try:
+            with open(json_path, 'r') as file:
+                instructions = json.load(file)
+            return instructions.get(type, 'Not provided')
+        except FileNotFoundError:
+            print("Error: instructions.json file not found.")
+            return "Error: Could not generate response because the JSON file is missing."
+        except json.JSONDecodeError:
+            print("Error: Failed to decode JSON.")
+            return "Error: Could not generate response due to invalid JSON format."
+        
+    def get_history_path(self, channel_or_user):
+        if isinstance(channel_or_user, discord.TextChannel):  # Server channel
+            return f"chat_histories/{channel_or_user.id}.json"
+        elif isinstance(channel_or_user, discord.User):  # Private chat
+            return f"chat_histories/{channel_or_user.id}.json"
+
+    def is_private_chat(self, message):
+        return isinstance(message.channel, discord.DMChannel)
     
     async def send_message(self, channel, response):
         """Chunk response and send long messages, preserving code blocks and handling mixed content."""
@@ -123,13 +123,14 @@ class OnMessageEvent(commands.Cog):
                 try:
                     if self.bot.user in message.mentions or isinstance(message.channel, discord.DMChannel):
                         chat_history = format_history(history)
-                        instruction = get_instruction('intentional_trigger')
+                        instruction = self.get_instruction('intentional_trigger')
                     else:
-                        instruction = get_instruction('initiative_trigger')
+                        instruction = self.get_instruction('initiative_trigger')
         
                     messages = [msg async for msg in message.channel.history(limit=15)]
                     user_ids = [msg.author.id for msg in messages if msg.author.id != message.author.id]                 
                     user_information = get_userInfo(message.author.id, user_ids)
+                    print(user_information + "\n")
                     
                     knowledge_prompt = (
                         f"Perhatikan percakapan ini!\n{chat_history}\n"
