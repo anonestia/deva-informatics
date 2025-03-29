@@ -129,7 +129,7 @@ class Option1Modal(discord.ui.Modal, title="Input Knowledge Kondisi"):
     )
     kondisi = TextInput(
         label="Kondisi pemicu",
-        placeholder='(Opsional) Masukkan kalimat penjelas seperti "Fasilitas tempat yang ada untuk mahasiswa, cocok untuk mengerjakan tugas."',
+        placeholder='(Opsional) "Fasilitas tempat yang ada untuk mahasiswa, cocok untuk mengerjakan tugas."',
         style=TextStyle.long,
         required=False
     )

@@ -7,85 +7,100 @@ import rapidfuzz as fuzz
 from rapidfuzz.fuzz import partial_ratio
 
 def fetch_users(user_list, others):
-    """Fetch user data safely and return a formatted list"""
-    if not user_list:  # If empty, return empty result
+    """Fetch user data safely with NULL protection"""
+    if not user_list:
         return []
 
-    # Ensure user_list is always an iterable (tuple or list)
-    if isinstance(user_list, (int, str)):  
-        user_list = (user_list,)  # Convert single value to tuple
+    if isinstance(user_list, (int, str)):
+        user_list = (str(user_list),)  # Ensure it's a tuple of strings
 
+    # Convert all IDs to strings and ensure uniqueness
+    user_list = tuple(str(uid) for uid in set(user_list)) if not isinstance(user_list, (int, str)) else (str(user_list),)
+
+    # Define columns with COALESCE for NULL handling
     if others:
-        toFetch = "COALESCE(posisi, 'Unknown'), COALESCE(semester, 'Unknown')"
+        select_columns = """
+            COALESCE(nama, 'As stated in chat history'),
+            COALESCE(posisi, 'Unknown'),
+            COALESCE(semester, 'Unknown'),
+            COALESCE(kelas, 'Unknown')
+        """
+        expected_columns = 4
     else:
-        toFetch = "COALESCE(posisi, 'Unknown'), COALESCE(semester, 'Unknown'), COALESCE(kelas, ' '), COALESCE(tentang, 'Unknown'), COALESCE(minat, 'Unknown')"
+        select_columns = """
+            COALESCE(nama, 'As stated in chat history'),
+            COALESCE(posisi, 'Unknown'),
+            COALESCE(semester, 'Unknown'),
+            COALESCE(kelas, 'Unknown'),
+            COALESCE(tentang, 'Unknown')
+        """
+        expected_columns = 5
 
     conn = sqlite3.connect("data/user_info.db")
     cursor = conn.cursor()
     
-    # Create correct number of placeholders
-    marks = ", ".join(["?"] * len(user_list))
-
-    query = f"SELECT COALESCE(nama, 'As stated in chat history'), {toFetch} FROM user WHERE DiscordID IN ({marks})"
+    # Create placeholders for each user ID
+    placeholders = ','.join(['?'] * len(user_list))
+    query = f"SELECT {select_columns} FROM user WHERE DiscordID IN ({placeholders})"
 
     try:
         cursor.execute(query, user_list)
         result = cursor.fetchall()
-    except sqlite3.ProgrammingError as e:
-        print(f"SQLite Error: {e} | Query: {query} | Params: {user_list}")  # Debugging output
-        result = []
-    
-    conn.close()
+        if result and len(result[0]) != expected_columns:
+            print(f"Warning: Expected {expected_columns} columns but got {len(result[0])}")
+            return []  # Fail safely
+    except sqlite3.Error as e:
+        print(f"Database Error: {e}")
+        print(f"Failed query: {query}")  # Debug print
+        print(f"Parameters: {user_list}")  # Debug print
+        return []
+    finally:
+        conn.close()
+
     return result
 
 def get_userInfo(trigUser, nontrigUser=None):
     users_in_convo = []
     
-    # Fetch trigUser first
-    trigUserData = fetch_users(trigUser, 0)
+    # Fetch trigUser first (full details)
+    trigUserData = fetch_users(trigUser, others=0)
     
-    # Fetch nontrigUser (list of users)
+    # Fetch nontrigUser (limited details)
     otherUserData = []
     if nontrigUser:
         for user in nontrigUser:
-            otherUserData.extend(fetch_users(user, 1))  # Extend list with multiple users
+            otherUserData.extend(fetch_users(user, others=1))
 
-    # Process each user
-    for i, user in enumerate(trigUserData + otherUserData):
-        nama, posisi, semester, kelas, tentang, minat = user
-        
-        # Determine if it's a trigUser or a nonTrigUser
-        is_trig_user = i < len(trigUserData)  # First part of list = trigUser
-
-        # Assign correct Discord ID
-        discord_id = trigUser if is_trig_user else nontrigUser[i - len(trigUserData)]  # Adjust index for nontrigUser list
-
-        if is_trig_user:
-            # Full details for trigUser
-            user_info = f"Information for user {discord_id}\n"
-            user_info += f"Nickname: {nama}\n"
-            if posisi != "Unknown":
-                user_info += f"{posisi}, "
-            if semester != "Unknown":
-                user_info += f"Semester: {semester} "
-            if kelas != "Unknown":
-                user_info += f"{kelas}\n"
-            if tentang != "Unknown":
-                user_info += f"\nAbout: {tentang}"
-            if minat != "Unknown":
-                user_info += f"\nBidang Minat: {minat}"
-        else:
-            # Limited details for nontrigUser (only nickname, position, semester)
-            user_info = f"Information for user {discord_id}\n"
-            user_info += f"Nickname: {nama}\n"
-            if posisi != "Unknown":
-                user_info += f"{posisi}, "
-            if semester != "Unknown":
-                user_info += f"Semester: {semester}"
-
+    # Process triggering user(s)
+    for user in trigUserData:
+        nama, posisi, semester, kelas, tentang = user
+        user_info = f"Information for user {trigUser}\n"
+        user_info += f"Nickname: {nama}\n"
+        if posisi != "Unknown":
+            user_info += f"{posisi}, "
+        if semester != "Unknown":
+            user_info += f"Semester: {semester}, "
+        if kelas != "Unknown":
+            user_info += f"Class: {kelas}\n"
+        if tentang != "Unknown":
+            user_info += f"About: {tentang}"
         users_in_convo.append(user_info)
 
-    # Return formatted user data
+    # Process other users
+    for i, user in enumerate(otherUserData):
+        nama, posisi, semester, kelas = user  # Only 3 values for others
+        discord_id = nontrigUser[i] if nontrigUser else "Unknown"
+        
+        user_info = f"Information for user {discord_id}\n"
+        user_info += f"Nickname: {nama}\n"
+        if posisi != "Unknown":
+            user_info += f"{posisi}, "
+        if semester != "Unknown":
+            user_info += f"Semester: {semester}, "
+        if kelas != "Unknown":
+            user_info += f"Class: {kelas}"
+        users_in_convo.append(user_info)
+
     return "Users in conversation:\n" + ("\n\n".join(users_in_convo) if users_in_convo else "No users' data found.")
 
     
@@ -205,7 +220,7 @@ class Identification(commands.Cog):
         self.bot = bot
 
     @app_commands.command(name="edit_profile", description="Beritahu Deva tentang dirimu")
-    async def ubah_profil(self, interaction: discord.Interaction):
+    async def edit_profil(self, interaction: discord.Interaction):
         connection = sqlite3.connect('data/user_info.db')
         cursor = connection.cursor()
         

@@ -35,8 +35,8 @@ def format_history(history):
     formatted = []
     for entry in history:
         # Format only if the part exists
-        user_part = f"{entry['user_display']} at {entry['timestamp']}: {entry['user_message']}" if 'user_message' in entry else ""
-        ai_part = f"anon (You) at {entry['timestamp']}: {entry['ai_response']}" if 'ai_response' in entry else ""
+        user_part = f"(User ID: {entry['user_id']}) {entry['user_display']} at {entry['timestamp']}: {entry['user_message']}" if 'user_message' in entry else ""
+        ai_part = f"Deva (You) at {entry['timestamp']}: {entry['ai_response']}" if 'ai_response' in entry else ""
         system_part = f"System entry at {entry['timestamp']}: {entry['system_message']}" if 'system_message' in entry else ""
         
         # Combine the parts, skipping empty ones

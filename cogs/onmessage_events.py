@@ -1,6 +1,6 @@
 from .chat_manager import load_history, save_history, format_history, clear_history_file, add_to_history, generate_ai_response, generate_agent_response, deepContext_generate
 from .knowledge_management import knowledge_recall
-from .user_identification import get_userInfo
+from .user_identification import get_userInfo, fetch_users
 import discord
 from discord.ext import commands
 import random, os, json, re
@@ -126,16 +126,48 @@ class OnMessageEvent(commands.Cog):
                         instruction = self.get_instruction('intentional_trigger')
                     else:
                         instruction = self.get_instruction('initiative_trigger')
-        
+
                     messages = [msg async for msg in message.channel.history(limit=15)]
-                    user_ids = [msg.author.id for msg in messages if msg.author.id != message.author.id]                 
-                    user_information = get_userInfo(message.author.id, user_ids)
-                    print(user_information + "\n")
+                    # Use a set to store unique user IDs
+                    unique_user_ids = set()
+                    for msg in messages:
+                        if msg.author.id != message.author.id and msg.author.id != self.bot.user.id:
+                            unique_user_ids.add(msg.author.id)
+                    user_information = get_userInfo(str(message.author.id), [str(uid) for uid in unique_user_ids])
+                    
+                    if message.mentions:
+                        mentioned_ids = [user.id for user in message.mentions]  # List comprehension
+                        userMentioned = []
+                        if mentioned_ids:
+                            user_list = fetch_users(mentioned_ids, 0)
+                            for i, user in enumerate(user_list):
+                                nama, posisi, semester, kelas, tentang = user
+                                
+                                user_id = mentioned_ids[i]
+
+                                # Full details for trigUser
+                                user_info = f"Information for user ID {user_id}\n"
+                                user_info += f"Nickname: {nama}\n"
+                                if posisi != "":
+                                    user_info += f"{posisi}, "
+                                if semester != "":
+                                    user_info += f"Semester: {semester}"
+                                if kelas != "\n":
+                                    user_info += f"{kelas}\n"
+                                if tentang != "":
+                                    user_info += f"About the mentioned user (not sender): {tentang}\n"
+
+                                userMentioned.append(user_info)
+
+                            # Return formatted user data
+                            user_information += "\n\nUser(s) mentioned:\n" + ("\n\n".join(userMentioned) if userMentioned else "User mentioned none.")
+                    print(user_information)
+                    print(chat_history)
                     
                     knowledge_prompt = (
                         f"Perhatikan percakapan ini!\n{chat_history}\n"
                         "Kamu membalas sebagai Deva. Apakah ada pertanyaan berkaitan dengan jadwal, dosen, dan hal lain yang berkaitan dengan informasi kampus?"
-                        "Pembahasan bisa jadi disebutkan secara tersirat. Apabila ditemukan kata-kata berkaitan pada hal spesifik dan unik kampus yang bukanlah informasi yang biasa diakses publik serta dibutuhkan info terkini, maka itu membutuhkan konteks tambahan."
+                        "Pembahasan bisa jadi disebutkan secara tersirat. Apabila ditemukan kata-kata berkaitan pada hal spesifik dan unik kampus yang bukanlah informasi yang biasa diakses publik serta dibutuhkan info terkini, maka itu membutuhkan konteks tambahan. Informasi mahasiswa tidak ada di sini, jadi mentions seperti <@1234567890> tidak terhitung."
                         "Jawab hanya Y untuk ya, atau hanya N untuk tidak."
                     )
                     knowledge_decision = generate_agent_response(knowledge_prompt).strip()
