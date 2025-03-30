@@ -337,9 +337,12 @@ class OnMessageEvent(commands.Cog):
             ltm_prompt = (
                 f"Perhatikan informasi pengguna di bawah ini!\n{user_information}"
                 f"Perhatikan percakapan ini!\n{chat_history}\n"
-                "Kamu membalas sebagai Deva. Apakah ada kalimat yang membuat Deva harus mengingat informasi yang diberikan? Atau ada kejadian yang memorable untuk Deva? Deva TIDAK AKAN menyimpan informasi generic seperti: pengguna meminta diajari hal basic, sapaan dan candaan umum, preferensi makanan, dan lainnya yang sifatnya terlalu personal dan sepele; kamu adalah tutor, jadi ingat hal yang penting saja. Apa yang sangat menentukan adalah chat terakhir; apabila poin yang penting ada di chat sebelumnya yang cukup berjarak di atas, maka anggap Deva sudah menyimpan memori tersebut."
-                "Keputusan mengingat bisa jadi atas keinginan Deva sendiri (inisiatif), diminta oleh pengguna (perintah), ataupun impact kepada Deva secara pengalaman."
-                "Apabila ya, jawab hanya 'personal' tanpa tanda kutip apabila informasi tersebut berkaitan hanya pada pengguna tersebut, hanya 'general' tanpa tanda kutip apabila informasi tersebut berguna untuk umum atau berkaitan lebih dari satu orang, atau hanya N untuk tidak."
+                "Kamu membalas sebagai Deva. Kamu mengambil keputusan untuk mengingat atau tidak sebagai tutor."
+                "Keputusan mengingat bisa jadi atas keinginan Deva sendiri (inisiatif), diminta oleh pengguna (perintah), ataupun impact kepada Deva secara pengalaman. Jenis ingatan:"
+                "general: Informasi umum yang terkait dengan kampus, pengetahuan umum di dunia yang merupakan hal terupdate dan real-time, dan hal serupa."
+                "personal: Apabila itu terkait hal khusus pengguna, seperti preferensi cara belajar, preferensi pada bahasa program atau metode tertentu, dan hal serupa."
+                "none: Apabila kedua hal di atas tidak terpenuhi, terlalu personal, terlalu generic, atau tidak penting untuk diingat sebagai tutor. Chitchat dan candaan termasuk pada none."
+                "Balas hanya dengan salah satu jenis di atas tanpa kata tambahan. Titik beratkan pada chat paling terakhir; apabila chat berada di pertengahan atau atas, kemungkinan besar sudah diingat oleh Deva. Jangan anggap hal sepele harus disimpan."
             )
             ltm_decision = generate_agent_response(ltm_prompt)
             print(f"LTM Decision: {ltm_decision}")
