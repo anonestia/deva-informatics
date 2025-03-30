@@ -59,6 +59,28 @@ def setup_database():
     
     user_conn.commit()
     user_conn.close()
+    
+    user_conn = sqlite3.connect("data/ltm.db")
+    user_cursor = user_conn.cursor()
+    user_cursor.execute(f'''
+        CREATE TABLE IF NOT EXISTS general (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            DiscordID TEXT NOT NULL,
+            summary TEXT NOT NULL,
+            keyword TEXT DEFAULT NULL
+        )
+    ''')
+
+    user_cursor.execute(f'''
+        CREATE TABLE IF NOT EXISTS personal (
+            DiscordID TEXT PRIMARY KEY,
+            summary TEXT NOT NULL,
+            keyword TEXT DEFAULT NULL
+        )
+    ''')    
+    
+    user_conn.commit()
+    user_conn.close()
 
 # Load cogs
 @bot.event

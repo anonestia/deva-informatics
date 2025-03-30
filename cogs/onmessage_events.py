@@ -1,14 +1,129 @@
 from .chat_manager import load_history, save_history, format_history, clear_history_file, add_to_history, generate_ai_response, generate_agent_response, deepContext_generate
 from .knowledge_management import knowledge_recall
+from .keyword_management import find_similar_LTM
 from .user_identification import get_userInfo, fetch_users
-import discord
+import discord, sqlite3
 from discord.ext import commands
 import random, os, json, re
-from collections import defaultdict
 
 class OnMessageEvent(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
+    
+    def make_keyword(self, summary):
+        prompt = f"Summary text:\n{summary}\nFrom this summary above, determine the keywords. Keywords are used to decide if it is relevant enough or not to be remembered. The more keywords matched, the more likely it gets recalled. Get up to 10 keywords, and less keywords are okay. Keywords are short. like jadwal, 2A, Senin, dosen, informatika. Do not add additional words and just say the keywords right away SEPARATED WITH COMMAS."
+        return generate_agent_response(prompt)
+    
+    def do_longTermMemory(self, chat_history, ltmType, DiscordID):
+        """
+        From the chat_history, extract valuable points and save them as long-term memory in a database.
+        """
+        connection = sqlite3.connect('data/ltm.db')
+        cursor = connection.cursor()
+
+        # Generate summary
+        prompt = (
+            "Based on the conversation below, generate a summary of the valuable information worth remembering for the far future (long-term memory)."
+            "Heavily reference the latest message. Keep the details, names, objects, etc. Exclude irrelevant information. Write the dates if necessary or it is a time-based event/memory, otherwise don't write at all."
+            "Do not add generic information like 'user wants to learn something basic' or unnecessary details. Do not be overly detailed."
+            "Do not add any additional words; just return the summary.\n"
+            f"The conversation:\n{chat_history}"
+        )
+        summary = generate_agent_response(prompt)
+
+        if ltmType == "personal":
+            # Check if DiscordID already exists
+            cursor.execute(f"SELECT summary FROM {ltmType} WHERE DiscordID = ?", (DiscordID,))
+            existing_entry = cursor.fetchone()
+
+            if existing_entry:
+                existing_summary = existing_entry[0]
+
+                if existing_summary != summary:  # Only merge if summary has changed
+                    prompt = (
+                        "There are two summaries:\n"
+                        f"Summary 1 (older):\n{existing_summary}\n"
+                        f"Summary 2 (newer):\n{summary}\n"
+                        "Merge these two summaries, keeping all valuable details. Remove excessive details and unnecessary informations. Remove assumably old summary."
+                        "Prioritize the latest information and resolve contradictions. "
+                        "More than two paragraphs is allowed. Totally adjust the old summary is tolerable. Do not add extra words; return only the merged summary."
+                    )
+                    summary = generate_agent_response(prompt)
+
+                    keyword = self.make_keyword(summary)
+
+                    # Try to update
+                    cursor.execute(
+                        f"UPDATE {ltmType} SET summary = ?, keyword = ? WHERE DiscordID = ?", 
+                        (summary, keyword, DiscordID)
+                    )
+
+                    if cursor.rowcount == 0:  # If update didn't happen, insert instead
+                        cursor.execute(
+                            f"INSERT INTO {ltmType} (DiscordID, summary, keyword) VALUES (?, ?, ?)", 
+                            (DiscordID, summary, keyword)
+                        )
+                else:
+                    print("Summary hasn't changed, skipping update.")
+            else:
+                # Insert new entry if no previous data exists
+                keyword = self.make_keyword(summary)
+                cursor.execute(
+                    f"INSERT INTO {ltmType} (DiscordID, summary, keyword) VALUES (?, ?, ?)", 
+                    (DiscordID, summary, keyword)
+                )
+
+        elif ltmType == "general":
+            keyword = self.make_keyword(summary)
+            cursor.execute(
+                f"INSERT INTO {ltmType} (DiscordID, summary, keyword) VALUES (?, ?, ?)", 
+                (DiscordID, summary, keyword)
+            )
+
+        connection.commit()
+        connection.close()
+        print(f"Long-term memory updated successfully for {ltmType}.")
+
+        
+    def get_longTermMemory(self, chat_history, DiscordID):
+        connection = sqlite3.connect('data/ltm.db')
+        cursor = connection.cursor()
+        
+        cursor.execute("SELECT summary FROM personal WHERE DiscordID = ?", (DiscordID,))
+        personalLTM = cursor.fetchone()
+        connection.commit()
+        
+        cursor.execute("SELECT id, summary, keyword FROM general")
+        generalLTM = cursor.fetchall()  # ✅ Add parentheses to execute fetch
+        connection.commit()
+        
+        relevant_entries = find_similar_LTM(generalLTM, chat_history)
+        
+        if relevant_entries:
+            placeholders = ','.join(['?'] * len(relevant_entries))
+            cursor.execute(f"SELECT summary FROM general WHERE id IN ({placeholders})", relevant_entries)
+            filtered_summaries = cursor.fetchall()
+        else:
+            filtered_summaries = []
+
+        # Format the output string
+        if filtered_summaries:
+            result_text = "General long-term memories:\n" + "\n\n".join(summary[0] for summary in filtered_summaries)
+        else:
+            result_text = ""
+
+        # Format personal LTM properly
+        personal_text = f"Personal Long-Term Memory for ID {DiscordID}:\n{personalLTM[0]}" if personalLTM else ""
+
+        # Ensure we don't return unnecessary newlines
+        if personal_text and result_text:
+            return f"{personal_text}\n\n{result_text}"
+        elif personal_text:
+            return personal_text
+        elif result_text:
+            return result_text
+        else:
+            return ""
         
     def get_instruction(self, type):
         # Path to the JSON file (adjusted for the 'cogs' folder structure)
@@ -162,12 +277,14 @@ class OnMessageEvent(commands.Cog):
                             # Return formatted user data
                             user_information += "\n\nUser(s) mentioned:\n" + ("\n\n".join(userMentioned) if userMentioned else "User mentioned none.")
                     print(user_information)
-                    print(chat_history)
+                    
+                    ltm_information = self.get_longTermMemory(chat_history, message.author.id)
                     
                     knowledge_prompt = (
+                        f"Perhatikan informasi pengguna di bawah ini!\n{user_information}"
                         f"Perhatikan percakapan ini!\n{chat_history}\n"
                         "Kamu membalas sebagai Deva. Apakah ada pertanyaan berkaitan dengan jadwal, dosen, dan hal lain yang berkaitan dengan informasi kampus?"
-                        "Pembahasan bisa jadi disebutkan secara tersirat. Apabila ditemukan kata-kata berkaitan pada hal spesifik dan unik kampus yang bukanlah informasi yang biasa diakses publik serta dibutuhkan info terkini, maka itu membutuhkan konteks tambahan. Informasi mahasiswa tidak ada di sini, jadi mentions seperti <@1234567890> tidak terhitung."
+                        "Pembahasan bisa jadi disebutkan secara tersirat. Apabila ditemukan kata-kata berkaitan pada hal spesifik, real-time, dan unik kampus yang bukanlah informasi yang biasa diakses publik serta dibutuhkan info terkini, maka itu membutuhkan konteks tambahan. Informasi tentang mahasiswa tertentu tidak ada di sini, jadi pertanyaan mentions seperti <@1234567890> tidak terhitung."
                         "Jawab hanya Y untuk ya, atau hanya N untuk tidak."
                     )
                     knowledge_decision = generate_agent_response(knowledge_prompt).strip()
@@ -180,6 +297,7 @@ class OnMessageEvent(commands.Cog):
                             f"{instruction}"
                             f"Below is your notes. Use the knowledge below as help to reply user's query. Do not alter information or imagine what's not given here.\n{knowledge}\n\n"
                             f"{user_information}"
+                            f"{ltm_information}"
                             f"This is a conversation history:\n{chat_history}.\n"
                             f"\nUser's latest message:\n{message.author.display_name}: {message.content}\nYou: "
                         )
@@ -187,11 +305,13 @@ class OnMessageEvent(commands.Cog):
                         prompt = (
                             f"{instruction}"
                             f"{user_information}"
+                            f"{ltm_information}"
                             f"This is a conversation history:\n{chat_history}.\n"
                             f"\nUser's latest message:\n{message.author.display_name}: {message.content}\nYou: "
                         )
                     
                     deepContext_prompt = (
+                        f"This is information about user in the conversation:\n{user_information}"
                         f"This is the chat history:\n{chat_history}"
                         f"User's latest message:\n{message.author.display_name}: {message.content}"
                     )
@@ -212,7 +332,20 @@ class OnMessageEvent(commands.Cog):
                     # Use the chunking function to send the response
                     await self.send_message(message.channel, response)
                 except Exception as e:
-                    await message.channel.send(f"Eh, maaf. Bisa ulangi?\n-# Error: {e}")    
+                    await message.channel.send(f"Eh, maaf. Bisa ulangi?\n-# Error: {e}")
+                    return
+            ltm_prompt = (
+                f"Perhatikan informasi pengguna di bawah ini!\n{user_information}"
+                f"Perhatikan percakapan ini!\n{chat_history}\n"
+                "Kamu membalas sebagai Deva. Apakah ada kalimat yang membuat Deva harus mengingat informasi yang diberikan? Atau ada kejadian yang memorable untuk Deva? Deva TIDAK AKAN menyimpan informasi generic seperti: pengguna meminta diajari hal basic, sapaan dan candaan umum, preferensi makanan, dan lainnya yang sifatnya terlalu personal dan sepele; kamu adalah tutor, jadi ingat hal yang penting saja. Apa yang sangat menentukan adalah chat terakhir; apabila poin yang penting ada di chat sebelumnya yang cukup berjarak di atas, maka anggap Deva sudah menyimpan memori tersebut."
+                "Keputusan mengingat bisa jadi atas keinginan Deva sendiri (inisiatif), diminta oleh pengguna (perintah), ataupun impact kepada Deva secara pengalaman."
+                "Apabila ya, jawab hanya 'personal' tanpa tanda kutip apabila informasi tersebut berkaitan hanya pada pengguna tersebut, hanya 'general' tanpa tanda kutip apabila informasi tersebut berguna untuk umum atau berkaitan lebih dari satu orang, atau hanya N untuk tidak."
+            )
+            ltm_decision = generate_agent_response(ltm_prompt)
+            print(f"LTM Decision: {ltm_decision}")
+                    
+            if ltm_decision == "personal" or ltm_decision == "general":
+                self.do_longTermMemory(chat_history, ltm_decision, message.author.id)
 
 
 async def setup(bot):

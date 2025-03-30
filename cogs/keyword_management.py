@@ -24,7 +24,7 @@ def detect_intent(chat_history):
     
     prompt= (
         f"There is a conversation below:\n{chat_history}"
-        "You are replying as Deva. She needs to recall information. Are the information needed must be detailed, or general?"
+        "You are replying as Deva. He needs to recall information. Are the information needed must be detailed, or general?"
         "General information is needed when only shallow information required, usually simple questions that answers What, Who, When, and Where. Detailed information demands for calculation, answers Why and How, in depth, and other _details._"
         "If the information needed is only general, write General. Otherwise, return Detailed. Write without additional words, nor period."
     )
@@ -37,19 +37,6 @@ def detect_intent(chat_history):
         return result
     else:
         return "General"
-    
-    ### Non-AI decision
-    # detailed_keywords = ["calculation", "how to", "best way", "mechanics", "explain", "formula", "optimal", "strategy", "cara", "hitung", "rumus", "kalkulasi", "hitungan", "matematika", "jelaskan", "jelasin"]
-    # general_keywords = ["what is", "what are", "list of", "overview", "basics", "types of", "examples of", "apa", "daftar", "basic"]
-
-    # chat_lower = chat_history.lower()
-    
-    # if any(word in chat_lower for word in detailed_keywords):
-    #     return "Detailed"
-    # if any(word in chat_lower for word in general_keywords):
-    #     return "General"
-    
-    # return "General"  # Default to General if unclear
 
 def get_entries(entries, id_indices, intent):
     """
@@ -103,3 +90,54 @@ def find_similar_entries(entries, chat_history, top_n=5, threshold=0.15):
     final_results = set(top_results) | auto_picked
     
     return list(final_results), intent
+
+def find_similar_LTM(entries, chat_history, top_n=5, threshold=0.15):
+    """
+    Find the most relevant keyword entries based on the chat history.
+    Returns a list of entry IDs.
+    """
+    
+    if not entries:  # 🛑 Prevent error if `entries` is empty
+        return []
+
+    entry_dict = {entry[0]: {"summary": entry[1], "keywords": entry[2]} for entry in entries}
+
+    documents = []
+    entry_map = []
+    
+    for entry_id, data in entry_dict.items():
+        processed_keywords = data["keywords"] if data["keywords"] else ""  # Ensure no NoneType error
+        documents.append(f"{data['summary']} {processed_keywords}")
+        entry_map.append(entry_id)
+    
+    if not documents:  # 🛑 Prevent error if `documents` is empty
+        return []
+
+    # Vectorize the text data + chat history
+    vectorizer = TfidfVectorizer()
+    tfidf_matrix = vectorizer.fit_transform(documents + [chat_history])
+
+    if tfidf_matrix.shape[0] <= 1:  # 🛑 Prevent cosine similarity error
+        return []
+    
+    # Compute cosine similarity
+    similarity_scores = cosine_similarity(tfidf_matrix[-1], tfidf_matrix[:-1]).flatten()
+    
+    # Auto-pick based on fuzzy matching of summaries
+    auto_picked = set()
+    for i, entry_id in enumerate(entry_map):
+        summary = entry_dict[entry_id]["summary"].lower()
+        if fuzz.partial_ratio(summary, chat_history.lower()) >= 80:
+            auto_picked.add(entry_id)
+    
+    # Filter entries that meet the similarity threshold
+    valid_entries = [(entry_map[i], similarity_scores[i]) for i in range(len(similarity_scores)) if similarity_scores[i] >= threshold]
+    valid_entries.sort(key=lambda x: x[1], reverse=True)  # Sort by relevance
+    
+    # Get the top N most relevant entries
+    top_results = [entry_id for entry_id, _ in valid_entries[:top_n]]
+    
+    # Combine auto-picked and similarity-based results
+    final_results = set(top_results) | auto_picked
+    
+    return list(final_results)
