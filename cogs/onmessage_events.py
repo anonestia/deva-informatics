@@ -24,8 +24,8 @@ class OnMessageEvent(commands.Cog):
         # Generate summary
         prompt = (
             "Based on the conversation below, generate a summary of the valuable information worth remembering for the far future (long-term memory)."
-            "Heavily reference the latest message. Keep the details, names, objects, etc. Exclude irrelevant information. Write the dates if necessary or it is a time-based event/memory, otherwise don't write at all."
-            "Do not add generic information like 'user wants to learn something basic' or unnecessary details. Do not be overly detailed."
+            "Heavily reference the latest message. Keep notes concisely; names, events, objects, etc. Exclude irrelevant, non-time based, and generic information that can be found anywhere. Write the dates if necessary or it is a time-based event/memory, otherwise don't write at all."
+            "Do not make generic information like 'user wants to learn something' or 'user asked deva to do this'. Do not be overly detailed. If by chance the chat_history only states generic information, then only return 'No update needed'."
             "Do not add any additional words; just return the summary.\n"
             f"The conversation:\n{chat_history}"
         )
@@ -44,7 +44,7 @@ class OnMessageEvent(commands.Cog):
                         "There are two summaries:\n"
                         f"Summary 1 (older):\n{existing_summary}\n"
                         f"Summary 2 (newer):\n{summary}\n"
-                        "Merge these two summaries, keeping all valuable details. Remove excessive details and unnecessary informations. Remove assumably old summary."
+                        "Merge these two summaries, keeping all valuable details. Remove excessive details and unnecessary informations. Remove assumably old summary that won't be used anymore or is a junk information."
                         "Prioritize the latest information and resolve contradictions. "
                         "More than two paragraphs is allowed. Totally adjust the old summary is tolerable. Do not add extra words; return only the merged summary."
                     )
@@ -310,13 +310,11 @@ class OnMessageEvent(commands.Cog):
                             f"\nUser's latest message:\n{message.author.display_name}: {message.content}\nYou: "
                         )
                     
-                    deepContext_prompt = (
+                    response = generate_ai_response(prompt, (
                         f"This is information about user in the conversation:\n{user_information}"
                         f"This is the chat history:\n{chat_history}"
                         f"User's latest message:\n{message.author.display_name}: {message.content}"
-                    )
-                    deep_context = deepContext_generate(deepContext_prompt).strip()
-                    response = generate_ai_response(prompt, deep_context)
+                    ))
 
                     # Update history with bot's response
                     history = add_to_history(
@@ -339,13 +337,13 @@ class OnMessageEvent(commands.Cog):
                 f"Perhatikan percakapan ini!\n{chat_history}\n"
                 "Kamu membalas sebagai Deva. Kamu mengambil keputusan untuk mengingat atau tidak sebagai tutor."
                 "Keputusan mengingat bisa jadi atas keinginan Deva sendiri (inisiatif), diminta oleh pengguna (perintah), ataupun impact kepada Deva secara pengalaman. Jenis ingatan:"
-                "general: Informasi umum yang terkait dengan kampus, pengetahuan umum di dunia yang merupakan hal terupdate dan real-time, dan hal serupa."
-                "personal: Apabila itu terkait hal khusus pengguna, seperti preferensi cara belajar, preferensi pada bahasa program atau metode tertentu, dan hal serupa."
+                "general: Informasi umum yang terkait dengan kampus, pengetahuan umum di dunia yang merupakan hal terupdate dan real-time, dan hal serupa. HARUS ADA FAKTOR REAL-TIME UPDATE. Pertanyaan meliputi cara programming tidak termasuk di sini, kecuali secara eksplisit menyebutkan versi yang lebih baru."
+                "personal: Apabila itu terkait hal khusus pengguna, seperti preferensi cara belajar, preferensi pada bahasa program atau metode tertentu, keinginan belajar tertentu, proyek pribadi pengguna, dan hal serupa. HARUS ADA FAKTOR PREFERENSI. Pertanyaan umum penjelasan program tidak termasuk di sini. Hanya catatan personal."
                 "none: Apabila kedua hal di atas tidak terpenuhi, terlalu personal, terlalu generic, atau tidak penting untuk diingat sebagai tutor. Chitchat dan candaan termasuk pada none."
                 "Balas hanya dengan salah satu jenis di atas tanpa kata tambahan. Titik beratkan pada chat paling terakhir; apabila chat berada di pertengahan atau atas, kemungkinan besar sudah diingat oleh Deva. Jangan anggap hal sepele harus disimpan."
             )
             ltm_decision = generate_agent_response(ltm_prompt)
-            print(f"LTM Decision: {ltm_decision}")
+            print(f"LTM Decision: {ltm_decision}\n====================")
                     
             if ltm_decision == "personal" or ltm_decision == "general":
                 self.do_longTermMemory(chat_history, ltm_decision, message.author.id)

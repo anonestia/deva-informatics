@@ -213,6 +213,83 @@ class ProfileModal(discord.ui.Modal, title="Beritahu Tentangmu"):
         connection.close()
 
         await interaction.response.send_message(f"Datamu berhasil diperbaharui, {nama}.", ephemeral=True)
+        
+class ProfilePaginator(discord.ui.View):
+    def __init__(self, interaction: discord.Interaction, entries: list):
+        super().__init__()
+        self.interaction = interaction
+        self.entries = entries
+        self.current_index = 0
+
+        # Set initial embed
+        self.message = None
+        self.update_buttons()
+
+    def update_buttons(self):
+        """Update button states based on index"""
+        self.previous_button.disabled = self.current_index == 0
+        self.next_button.disabled = self.current_index == len(self.entries) - 1
+
+    def format_embed(self):
+        """Format the current profile as an embed"""
+        profile = self.entries[self.current_index]
+        embed = discord.Embed(title="User Profile", color=discord.Color.blue())
+        embed.add_field(name="Nama", value=profile[0], inline=False)
+        embed.add_field(name="Posisi", value=profile[1] or "Tidak Diketahui", inline=False)
+        embed.add_field(name="Semester", value=profile[2] or "Tidak Diketahui", inline=False)
+        embed.add_field(name="Kelas", value=profile[3] or "Tidak Diketahui", inline=False)
+        embed.add_field(name="Tentang", value=profile[4] or "Tidak Diketahui", inline=False)
+        embed.set_footer(text=f"Profil {self.current_index + 1} dari {len(self.entries)}")
+
+        return embed
+
+    async def update_message(self):
+        """Update the embed message"""
+        self.update_buttons()
+        if self.message:
+            await self.message.edit(embed=self.format_embed(), view=self)
+
+    @discord.ui.button(label="⬅️", style=discord.ButtonStyle.primary, disabled=True)
+    async def previous_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        """Go to previous profile"""
+        self.current_index -= 1
+        await self.update_message()
+        await interaction.response.defer()
+
+    @discord.ui.button(label="➡️", style=discord.ButtonStyle.primary, disabled=False)
+    async def next_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        """Go to next profile"""
+        self.current_index += 1
+        await self.update_message()
+        await interaction.response.defer()
+
+    @discord.ui.button(label="🗑️", style=discord.ButtonStyle.danger)
+    async def delete_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        """Delete the current profile"""
+        profile = self.entries[self.current_index]
+        discord_id = profile[5]  # The stored Discord ID in the database
+
+        # Delete from database
+        connection = sqlite3.connect('data/user_info.db')
+        cursor = connection.cursor()
+        cursor.execute("DELETE FROM user WHERE DiscordID = ?", (discord_id,))
+        connection.commit()
+        connection.close()
+
+        # Remove from entries list
+        self.entries.pop(self.current_index)
+
+        if not self.entries:
+            await interaction.response.send_message("✅ Profil berhasil dihapus! Tidak ada profil yang tersisa.", ephemeral=True)
+            await self.message.delete()
+            return
+
+        # Adjust index if needed
+        if self.current_index >= len(self.entries):
+            self.current_index = len(self.entries) - 1
+
+        await self.update_message()
+        await interaction.response.send_message("✅ Profil berhasil dihapus!", ephemeral=True)
 
 
 class Identification(commands.Cog):
@@ -245,8 +322,27 @@ class Identification(commands.Cog):
             modal = ProfileModal(*data)
         else:
             modal = ProfileModal()
-
         await interaction.response.send_modal(modal)
+        
+    @app_commands.command(name="view_profiles", description="Lihat semua profil yang tersimpan [OWNER ONLY]")
+    async def view_profiles(self, interaction: discord.Interaction):
+        if not await self.bot.is_owner(interaction.user):
+            await interaction.response.send_message("Maaf, hanya owner yang bisa pakai ini.", ephemeral=True)
+            return
+        connection = sqlite3.connect('data/user_info.db')
+        cursor = connection.cursor()
+
+        cursor.execute("SELECT nama, posisi, semester, kelas, tentang, DiscordID FROM user")
+        profiles = cursor.fetchall()
+        connection.close()
+
+        if not profiles:
+            await interaction.response.send_message("Tidak ada profil pengguna.", ephemeral=True)
+            return
+
+        paginator = ProfilePaginator(interaction, profiles)
+        message = await interaction.response.send_message(embed=paginator.format_embed(), view=paginator)
+        paginator.message = await message.original_response()
         
 async def setup(bot):
     await bot.add_cog(Identification(bot))

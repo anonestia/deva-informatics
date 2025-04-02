@@ -4,6 +4,7 @@ from discord.ext import commands
 from discord.ui import TextInput
 from .chat_manager import generate_agent_response
 from .keyword_management import find_similar_entries, get_entries
+from apikeys import authorizedROLES
 
 def kondisi_knowledge(chat_history = str):
     conn = sqlite3.connect("data/knowledge.db")
@@ -395,25 +396,43 @@ class Knowledge(commands.Cog):
         self.bot = bot
 
     # Slash command to input knowledge
-    @app_commands.command(name="input_knowledge", description="Memasukkan knowledge ke database AI")
+    @app_commands.command(name="input_knowledge", description="Memasukkan knowledge ke database AI [OWNER ONLY]")
     @app_commands.describe(option="Pilih knowledge tipe kondisi atau keyword")
     @app_commands.choices(option=[
         app_commands.Choice(name="Kondisi", value="kondisi"),
         app_commands.Choice(name="Keyword", value="keyword")
     ])
     async def input_knowledge(self, interaction: discord.Interaction, option: app_commands.Choice[str]):
+        if await self.bot.is_owner(interaction.user):
+            pass  # Allow execution
+        # Check if the user has the required role
+        elif any(role.id == authorizedROLES for role in interaction.user.roles):
+            pass  # Allow execution
+        else:
+            await interaction.response.send_message("Maaf, hanya owner yang bisa pakai ini.", ephemeral=True)
+            return
+        
         if option.value == "kondisi":
             await interaction.response.send_modal(Option1Modal())
         elif option.value == "keyword":
             await interaction.response.send_modal(Option2Modal())
 
-    @app_commands.command(name="view_knowledge", description="Lihat knowledge yang tersimpan.")
+    @app_commands.command(name="view_knowledge", description="Lihat knowledge yang tersimpan [OWNER ONLY]")
     @app_commands.describe(option="Pilih knowledge tipe kondisi atau keyword")
     @app_commands.choices(option=[
         app_commands.Choice(name="Kondisi", value="kondisi"),
         app_commands.Choice(name="Keyword", value="keyword")
     ])
     async def view_knowledge(self, interaction: discord.Interaction, option: app_commands.Choice[str]):
+        if await self.bot.is_owner(interaction.user):
+            pass  # Allow execution
+        # Check if the user has the required role
+        elif any(role.id == authorizedROLES for role in interaction.user.roles):
+            pass  # Allow execution
+        else:
+            await interaction.response.send_message("Maaf, hanya owner yang bisa pakai ini.", ephemeral=True)
+            return
+        
         conn = sqlite3.connect(f"data/knowledge.db")
         cursor = conn.cursor()
         cursor.execute(f"SELECT * FROM {option.value}")
