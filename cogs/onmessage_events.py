@@ -3,12 +3,31 @@ from .knowledge_management import knowledge_recall
 from .keyword_management import find_similar_LTM
 from .user_identification import get_userInfo, fetch_users
 import discord, sqlite3
+from discord import app_commands
 from discord.ext import commands
 import random, os, json, re
 
 class OnMessageEvent(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
+        self.file_path = "data/activechan.json"
+        self.always_reply_channels = self.load_channels()
+
+    def load_channels(self):
+        """Loads the always-reply channels from JSON file."""
+        if os.path.exists(self.file_path):
+            with open(self.file_path, "r") as f:
+                try:
+                    return set(json.load(f))  # Load as a set
+                except json.JSONDecodeError:
+                    return set()  # If file is corrupted, reset
+        return set()
+
+    def save_channels(self):
+        """Saves the always-reply channels to JSON file."""
+        os.makedirs(os.path.dirname(self.file_path), exist_ok=True)  # Ensure 'data/' exists
+        with open(self.file_path, "w") as f:
+            json.dump(list(self.always_reply_channels), f, indent=4)
     
     def make_keyword(self, summary):
         prompt = f"Summary text:\n{summary}\nFrom this summary above, determine the keywords. Keywords are used to decide if it is relevant enough or not to be remembered. The more keywords matched, the more likely it gets recalled. Get up to 10 keywords, and less keywords are okay. Keywords are short. like jadwal, 2A, Senin, dosen, informatika. Do not add additional words and just say the keywords right away SEPARATED WITH COMMAS."
@@ -206,7 +225,21 @@ class OnMessageEvent(commands.Cog):
         
         clear_history_file(history_path)
         await ctx.send("Memori berhasil dihapus. Memulai percakapan dari awal.")
+        
+    @app_commands.command(name="always_reply", description="Toggle selalu membalas di channel ini.")
+    @app_commands.checks.has_permissions(administrator=True)
+    async def toggle_always_reply(self, interaction: discord.Interaction):
+        """Slash command to toggle always-reply for a channel."""
+        channel_id = interaction.channel_id
 
+        if channel_id in self.always_reply_channels:
+            self.always_reply_channels.remove(channel_id)
+            await interaction.response.send_message("❌ Berhasil dimatikan.\nDeva hanya akan membalas apabila mendapat mention **@Deva** atau di-reply.")
+        else:
+            self.always_reply_channels.add(channel_id)
+            await interaction.response.send_message("✅ Berhasil dinyalakan.\nDeva akan selalu menjawab di channel ini tanpa mention dan reply.")
+
+        self.save_channels()
 
     @commands.Cog.listener()
     async def on_message(self, message):
@@ -233,10 +266,18 @@ class OnMessageEvent(commands.Cog):
         )
         save_history(history_path, history)
 
-        if isinstance(message.channel, discord.DMChannel) or self.bot.user in message.mentions or random.randint(1, 100) <= 5:
-            async with message.channel.typing():  # Keep typing active
+        # Conditions for the bot to reply
+        is_intentional = (
+            isinstance(message.channel, discord.DMChannel) or
+            message.channel.id in self.always_reply_channels or
+            self.bot.user in message.mentions
+        )
+        is_initiative = random.randint(1, 100) <= 5
+
+        if is_intentional or is_initiative:
+            async with message.channel.typing():
                 try:
-                    if self.bot.user in message.mentions or isinstance(message.channel, discord.DMChannel):
+                    if is_intentional:
                         chat_history = format_history(history)
                         instruction = self.get_instruction('intentional_trigger')
                     else:
